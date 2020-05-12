@@ -24,6 +24,8 @@ NOBLE_PHANTASM_TAP_POSITION = np.array(
     [[653, 155], [483, 155], [313, 155]]
 )  # 宝具カードのタップする位置
 
+# 画面判別処理を中断するまでの回数
+MAX_ERROR_COUNT = 50
 
 # カード種別
 class Card(IntEnum):
@@ -410,7 +412,6 @@ def get_game_phase(image_color, debug_mode=False):
     # 5. サポート選択画面
 
     phase = Phase.OTHER
-    print("画面判別処理中...")
 
     # 1. カード選択画面か否か
     card_type = get_card_type(image_color)
@@ -573,15 +574,33 @@ if __name__ == "__main__":
                         phase = Phase.OTHER
                 elif phase == Phase.OTHER:
                     # フェーズが判別不明になったら画面判別処理へ移行する
+                    if error_counter == 0:
+                        print("画面判別処理中... ( 1 /", MAX_ERROR_COUNT, ")")
+                    else:
+                        print(
+                            "\033[1A\033[2K\033[G画面判別処理中... (",
+                            error_counter + 1,
+                            "/",
+                            MAX_ERROR_COUNT,
+                            ")",
+                        )
+
                     phase = get_game_phase(image_color, True)
                     error_counter += 1
 
             # 画面判別処理を繰り返してもフェーズが判別不明の場合
-            if error_counter > 20:
+            if error_counter >= MAX_ERROR_COUNT:
                 print("エラー：現在のフェーズが判別できませんでした")
-                print("終了します")
-                GPIO.cleanup()
-                sys.exit()
+                while True:
+                    print("中断します(rで再開, eで終了): ", end="")
+                    s = input()
+                    if s == "r":
+                        error_counter = 0
+                        break
+                    elif s == "e":
+                        GPIO.cleanup()
+                        sys.exit()
+                        break
 
     except KeyboardInterrupt:
         print("プログラムを終了します")
