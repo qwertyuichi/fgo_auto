@@ -17,11 +17,11 @@ IMAGE_HEIGHT = 540
 
 # カードをタップする位置
 ARQ_CARD_TAP_POSITION = np.array(
-    [[95, 380], [290, 380], [485, 380], [680, 380], [875, 380]]
+    [[875, 380], [680, 380], [485, 380], [290, 380], [95, 380]]
 )  # Ars, Quick, Busterカードのタップする位置
 
 NOBLE_PHANTASM_TAP_POSITION = np.array(
-    [[313, 155], [483, 155], [653, 155]]
+    [[653, 155], [483, 155], [313, 155]]
 )  # 宝具カードのタップする位置
 
 
@@ -68,9 +68,9 @@ def reset_B102(gpio_initialized=True):
 #   NPゲージ量を表す配列(ndarray)
 def get_np_gauge(image_color, debug_mode=False):
     NP_POSITION = [
-        {"top_x": 121, "top_y": 508, "bottom_x": 221, "bottom_y": 510},
-        {"top_x": 359, "top_y": 508, "bottom_x": 459, "bottom_y": 510},
         {"top_x": 598, "top_y": 508, "bottom_x": 698, "bottom_y": 510},
+        {"top_x": 359, "top_y": 508, "bottom_x": 459, "bottom_y": 510},
+        {"top_x": 121, "top_y": 508, "bottom_x": 221, "bottom_y": 510},
     ]  # NPゲージの座標
     THRESHOLD = 20  # 明度の閾値; 閾値以上のpixelはNPゲージのバーが伸びている
     np_gauge = np.array([0, 0, 0])
@@ -180,11 +180,11 @@ def get_template_image_position(image_color, image_name, roi=None, debug_mode=Fa
 def get_brave_chain_combination(image_color, debug_mode=False):
     THRESHOLD = 0.9  # 一致度の閾値; 一致度の最大値がこの閾値以上であれば、比較対象の画像と一致しているとみなす
     CHARACTOR_POSITION = [
-        {"top_x": 33, "top_y": 300, "bottom_x": 164, "bottom_y": 380},
-        {"top_x": 224, "top_y": 300, "bottom_x": 355, "bottom_y": 380},
-        {"top_x": 414, "top_y": 300, "bottom_x": 545, "bottom_y": 380},
-        {"top_x": 607, "top_y": 300, "bottom_x": 738, "bottom_y": 380},
         {"top_x": 802, "top_y": 300, "bottom_x": 933, "bottom_y": 380},
+        {"top_x": 607, "top_y": 300, "bottom_x": 738, "bottom_y": 380},
+        {"top_x": 414, "top_y": 300, "bottom_x": 545, "bottom_y": 380},
+        {"top_x": 224, "top_y": 300, "bottom_x": 355, "bottom_y": 380},
+        {"top_x": 33, "top_y": 300, "bottom_x": 164, "bottom_y": 380},
     ]  # 各カードの認識範囲
 
     # キャプチャ画像のグレースケール化
@@ -252,11 +252,11 @@ def get_card_type(image_color, debug_mode=False):
     QUICK_IMAGE_PATH = "./pict/quick.png"
     BUSTER_IMAGE_PATH = "./pict/buster.png"
     CARD_POSITION = [
-        {"top_x": 33, "top_y": 380, "bottom_x": 165, "bottom_y": 465},
-        {"top_x": 224, "top_y": 380, "bottom_x": 355, "bottom_y": 465},
-        {"top_x": 414, "top_y": 380, "bottom_x": 545, "bottom_y": 465},
-        {"top_x": 607, "top_y": 380, "bottom_x": 738, "bottom_y": 465},
         {"top_x": 802, "top_y": 380, "bottom_x": 933, "bottom_y": 465},
+        {"top_x": 607, "top_y": 380, "bottom_x": 738, "bottom_y": 465},
+        {"top_x": 414, "top_y": 380, "bottom_x": 545, "bottom_y": 465},
+        {"top_x": 224, "top_y": 380, "bottom_x": 355, "bottom_y": 465},
+        {"top_x": 33, "top_y": 380, "bottom_x": 165, "bottom_y": 465},
     ]  # 各カードの認識範囲
     card_type = np.full(5, Card.UNKNOWN)
 
@@ -316,7 +316,7 @@ def get_aqb_chain_combination(card_type, debug_mode=False):
         return (None, None)
 
     # ARTS, QUICK, BUSTERのいずれかが3枚以上あれば、種別とその組を返す
-    chain_combination = np.array([])
+    # chain_combination = np.array([])
     for chain_type in range(3):
         if np.count_nonzero(card_type == chain_type) >= 3:
             result = (chain_type, np.where(card_type == chain_type)[0])
@@ -395,7 +395,7 @@ def select_card(np_gauge, card_type):
                 ### 4. ランダム選択 ###
                 print("        通常カードをランダム選択します")
                 normal_card_list = random.sample(list(range(5)), 3)
-                for i in normal_card_list:
+                for i in sorted(normal_card_list):
                     print("            通常カード" + str(i) + "を選択")
                     tc.move(ARQ_CARD_TAP_POSITION[i])
                     tc.tap()
@@ -453,49 +453,8 @@ def get_game_phase(image_color, debug_mode=False):
     return phase
 
 
-
 def get_noble_phantasm_type(image_color, debug_mode=False):
-    
     pass
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 if __name__ == "__main__":
@@ -556,7 +515,7 @@ if __name__ == "__main__":
                         phase = Phase.OTHER
 
                         date = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        path = "./pict/" + date + ".png"
+                        path = "./debug/" + date + ".png"
                         print("保存しました：" + path)
                         cv2.imwrite(path, image_color)  # ファイル保存
                 elif phase == Phase.CARD_SELECT:  # カード選択画面の場合
@@ -564,7 +523,7 @@ if __name__ == "__main__":
                     if np.count_nonzero(card_type == Card.UNKNOWN) <= 2:
                         # NPゲージ量を取得する
                         np_gauge = get_np_gauge(image_color)
-                        print("        NPゲージ量を取得しました：", np_gauge)
+                        print("        NPゲージ量を取得しました：", np.sort(np_gauge)[::-1])
                         # 下記の優先順で戦略を取る
                         # 1. 宝具使用
                         # 2. Arts, Quick, Busterチェイン使用
