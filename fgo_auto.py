@@ -1,17 +1,16 @@
-import touch_controller
 import cv2
 import numpy as np
 import time
 import random
-import matplotlib.pyplot as plt
-import RPi.GPIO as GPIO
 from enum import IntEnum
 import itertools
 import sys
-
 from datetime import datetime
+import serial
 
-# キャプチャの解像度
+
+# キャプチャの設定
+WINDOW_NAME = "rpiplay"
 IMAGE_WIDTH = 960
 IMAGE_HEIGHT = 540
 
@@ -25,7 +24,7 @@ NOBLE_PHANTASM_TAP_POSITION = np.array(
 )  # 宝具カードのタップする位置
 
 # 画面判別処理を中断するまでの回数
-MAX_ERROR_COUNT = 50
+MAX_ERROR_COUNT = 500
 
 # カード種別
 class Card(IntEnum):
@@ -45,24 +44,26 @@ class Phase(IntEnum):
     END_PROCESS = 4  # 連続出撃の選択画面
 
 
-# キャプチャボード(B102)のハードウェアリセットを実行する
-def reset_B102(gpio_initialized=True):
-    if not gpio_initialized:
-        # GPIOの初期設定
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setup(17, GPIO.OUT, initial=GPIO.HIGH)  # リセットピン
-        GPIO.setup(27, GPIO.IN)  # HDMI接続確認用ピン
+class TouchController:
+    def __init__(self):
+        self.ser = serial.Serial("/dev/ttyUSB0", 115200, timeout=None)
 
-    # HDMIケーブルが接続されていればB102のハードウェアリセットを実施
-    if GPIO.input(27) == GPIO.HIGH:
-        GPIO.output(17, GPIO.LOW)
-        time.sleep(0.1)
-        GPIO.output(17, GPIO.HIGH)
-        time.sleep(0.1)
-    else:
-        print("ERROR:HDMIケーブルが接続されていません")
-        GPIO.cleanup()
-        sys.exit()
+    def __del__(self):
+        self.ser.close()
+
+    def send_message(self, message):
+        self.ser.write(bytes(message, "UTF-8"))
+
+    def home(self):
+        self.send_message("HOME\n")
+
+    def tap(self):
+        self.send_message("TAP\n")
+
+    def move(self, destination_image_coordinate):
+        x, y = destination_image_coordinate
+        message = "MOVE," + str(x) + "," + str(y) + "\n"
+        self.send_message(message)
 
 
 ##### NPゲージ量の取得 #####
@@ -330,19 +331,6 @@ def get_aqb_chain_combination(card_type, debug_mode=False):
     return (None, None)
 
 
-# B102からの入力映像を任意のタイミングでキャプチャする
-def get_screen_capture():
-    # 画面をキャプチャする
-    cap = cv2.VideoCapture(0)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 960)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)
-
-    # retは画像を取得成功フラグ
-    ret, image_color = cap.read()
-
-    return ret, image_color
-
-
 # カード選択画面での行動を決める
 def select_card(np_gauge, card_type):
     # カード選択画面であることが確定したら下記の優先順で戦略を取る
@@ -454,139 +442,146 @@ def get_game_phase(image_color, debug_mode=False):
     return phase
 
 
-def get_noble_phantasm_type(image_color, debug_mode=False):
-    pass
+# フェーズによって行動を決める
+def select_action(phase, error_counter):
+    if phase == Phase.SUPPORTER_SELECT:  # サポート選択画面の場合
+        tap_position = get_template_image_position(image_color, "サポート選択")
+        if tap_position is not None:
+            # サポートの一番上のキャラクタを選択する
+            tap_position = np.array([100, 200])
+            tc.move(tap_position)
+            tc.tap()
+            print("        サポートを選択しました")
+
+            # 次のフェーズをセット
+            time.sleep(10)
+            print("    スキル選択画面へ移行します")
+            phase = Phase.SKILL_SELECT
+            error_counter = 0
+        else:
+            print("       サポート選択を認識できませんでした")
+            phase = Phase.OTHER
+    elif phase == Phase.SKILL_SELECT:  # スキル選択画面の場合
+        tap_position = get_template_image_position(image_color, "attack")
+        if tap_position is not None:
+            # Attackボタンを選択する
+            tc.move(tap_position)
+            tc.tap()
+            print("        Attackボタンを選択しました")
+
+            # 次のフェーズをセット
+            print("    カード選択画面へ移行します")
+            phase = Phase.CARD_SELECT
+            error_counter = 0
+        else:
+            print("        Attackボタンを認識できませんでした")
+            phase = Phase.OTHER
+
+            date = datetime.now().strftime("%Y%m%d_%H%M%S")
+            path = "./debug/" + date + ".png"
+            print("保存しました：" + path)
+            cv2.imwrite(path, image_color)  # ファイル保存
+    elif phase == Phase.CARD_SELECT:  # カード選択画面の場合
+        card_type = get_card_type(image_color)
+        if np.count_nonzero(card_type == Card.UNKNOWN) <= 2:
+            # NPゲージ量を取得する
+            np_gauge = get_np_gauge(image_color)
+            print("        NPゲージ量を取得しました：", np.sort(np_gauge)[::-1])
+            # 下記の優先順で戦略を取る
+            # 1. 宝具使用
+            # 2. Arts, Quick, Busterチェイン使用
+            # 3. Braveチェイン使用
+            # 4. ランダム選択
+            select_card(np_gauge, card_type)
+
+            # 次のフェーズをセット
+            # リザルト画面かスキル選択画面かわからないので画面判別処理へ入る
+            phase = Phase.OTHER
+            error_counter = 0
+        else:
+            print("        カードを認識できませんでした")
+            phase = Phase.OTHER
+    elif phase == Phase.RESULT:
+        tap_position = get_template_image_position(image_color, "result")
+        if tap_position is not None:
+            # "次へ"ボタンが現れる座標を3回タップする
+            tap_position = np.array([850, 510])
+            tc.move(tap_position)
+            for i in range(5):
+                tc.tap()
+                time.sleep(2)
+
+            # 次のフェーズをセット
+            phase = Phase.END_PROCESS
+            error_counter = 0
+        else:
+            print("        リザルト画面を認識できませんでした")
+            phase = Phase.OTHER
+    elif phase == Phase.END_PROCESS:
+        tap_position = get_template_image_position(image_color, "連続出撃")
+        if tap_position is not None:
+            # 連続出撃ボタンを選択する
+            tc.move(tap_position)
+            tc.tap()
+            time.sleep(3)
+            print("        連続出撃ボタンを選択しました")
+
+            # 次のフェーズをセット
+            time.sleep(5)
+            print("    サポート選択画面へ移行します")
+            phase = Phase.SUPPORTER_SELECT
+            error_counter = 0
+        else:
+            print("        連続出撃ボタンを認識できませんでした")
+            phase = Phase.OTHER
+    elif phase == Phase.OTHER:
+        # フェーズが判別不明になったら画面判別処理へ移行する
+        if error_counter == 0:
+            print("画面判別処理中... ( 1 /", MAX_ERROR_COUNT, ")")
+        else:
+            print(
+                "\033[1A\033[2K\033[G画面判別処理中... (",
+                error_counter + 1,
+                "/",
+                MAX_ERROR_COUNT,
+                ")",
+            )
+
+        phase = get_game_phase(image_color, True)
+        error_counter += 1
+
+    return phase, error_counter
 
 
 if __name__ == "__main__":
     # 画面制御のインスタンスを作成
-    tc = touch_controller.TouchController()
-
-    # クエストのフェーズ
-    phase = Phase.OTHER
+    tc = TouchController()
 
     # キャプチャの初期設定
-    reset_B102(gpio_initialized=False)
+    video_source = cv2.VideoCapture(
+        f"ximagesrc xname={WINDOW_NAME} ! videoconvert ! appsink"
+    )
 
+    # クエストのフェーズを初期化
+    phase = Phase.OTHER
     try:
-        #
         error_counter = 0
-        while True:
+        while cv2.waitKey(1) != 27:
             # ポインタを初期位置に戻す
             tc.home()
 
-            # B102のハードウェアリセットを実施
-            reset_B102()
-
-            # 画面のキャプチャ
-            ret, image_color = get_screen_capture()
+            # 画像をキャプチャ
+            ret, image_original = video_source.read()
 
             if ret:
-                if phase == Phase.SUPPORTER_SELECT:  # サポート選択画面の場合
-                    tap_position = get_template_image_position(image_color, "サポート選択")
-                    if tap_position is not None:
-                        # サポートの一番上のキャラクタを選択する
-                        tap_position = np.array([100, 200])
-                        tc.move(tap_position)
-                        tc.tap()
-                        print("        サポートを選択しました")
+                # 画像をリサイズ
+                image_color = cv2.resize(image_original, (IMAGE_WIDTH, IMAGE_HEIGHT))
 
-                        # 次のフェーズをセット
-                        time.sleep(10)
-                        print("    スキル選択画面へ移行します")
-                        phase = Phase.SKILL_SELECT
-                        error_counter = 0
-                    else:
-                        print("       サポート選択を認識できませんでした")
-                        phase = Phase.OTHER
-                elif phase == Phase.SKILL_SELECT:  # スキル選択画面の場合
-                    tap_position = get_template_image_position(image_color, "attack")
-                    if tap_position is not None:
-                        # Attackボタンを選択する
-                        tc.move(tap_position)
-                        tc.tap()
-                        print("        Attackボタンを選択しました")
+                # キャプチャした画像を表示
+                cv2.imshow("fgo_auto", image_color)
 
-                        # 次のフェーズをセット
-                        print("    カード選択画面へ移行します")
-                        phase = Phase.CARD_SELECT
-                        error_counter = 0
-                    else:
-                        print("        Attackボタンを認識できませんでした")
-                        phase = Phase.OTHER
-
-                        date = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        path = "./debug/" + date + ".png"
-                        print("保存しました：" + path)
-                        cv2.imwrite(path, image_color)  # ファイル保存
-                elif phase == Phase.CARD_SELECT:  # カード選択画面の場合
-                    card_type = get_card_type(image_color)
-                    if np.count_nonzero(card_type == Card.UNKNOWN) <= 2:
-                        # NPゲージ量を取得する
-                        np_gauge = get_np_gauge(image_color)
-                        print("        NPゲージ量を取得しました：", np.sort(np_gauge)[::-1])
-                        # 下記の優先順で戦略を取る
-                        # 1. 宝具使用
-                        # 2. Arts, Quick, Busterチェイン使用
-                        # 3. Braveチェイン使用
-                        # 4. ランダム選択
-                        select_card(np_gauge, card_type)
-
-                        # 次のフェーズをセット
-                        # リザルト画面かスキル選択画面かわからないので画面判別処理へ入る
-                        phase = Phase.OTHER
-                        error_counter = 0
-                    else:
-                        print("        カードを認識できませんでした")
-                        phase = Phase.OTHER
-                elif phase == Phase.RESULT:
-                    tap_position = get_template_image_position(image_color, "result")
-                    if tap_position is not None:
-                        # "次へ"ボタンが現れる座標を3回タップする
-                        tap_position = np.array([850, 510])
-                        tc.move(tap_position)
-                        for i in range(3):
-                            tc.tap()
-                            time.sleep(1)
-
-                        # 次のフェーズをセット
-                        phase = Phase.END_PROCESS
-                        error_counter = 0
-                    else:
-                        print("        リザルト画面を認識できませんでした")
-                        phase = Phase.OTHER
-                elif phase == Phase.END_PROCESS:
-                    tap_position = get_template_image_position(image_color, "連続出撃")
-                    if tap_position is not None:
-                        # 連続出撃ボタンを選択する
-                        tc.move(tap_position)
-                        tc.tap()
-                        time.sleep(3)
-                        print("        連続出撃ボタンを選択しました")
-
-                        # 次のフェーズをセット
-                        time.sleep(5)
-                        print("    サポート選択画面へ移行します")
-                        phase = Phase.SUPPORTER_SELECT
-                        error_counter = 0
-                    else:
-                        print("        連続出撃ボタンを認識できませんでした")
-                        phase = Phase.OTHER
-                elif phase == Phase.OTHER:
-                    # フェーズが判別不明になったら画面判別処理へ移行する
-                    if error_counter == 0:
-                        print("画面判別処理中... ( 1 /", MAX_ERROR_COUNT, ")")
-                    else:
-                        print(
-                            "\033[1A\033[2K\033[G画面判別処理中... (",
-                            error_counter + 1,
-                            "/",
-                            MAX_ERROR_COUNT,
-                            ")",
-                        )
-
-                    phase = get_game_phase(image_color, True)
-                    error_counter += 1
+                # 次のアクションを決める
+                phase, error_counter = select_action(phase, error_counter)
 
             # 画面判別処理を繰り返してもフェーズが判別不明の場合
             if error_counter >= MAX_ERROR_COUNT:
@@ -602,7 +597,8 @@ if __name__ == "__main__":
                         sys.exit()
                         break
 
+            time.sleep(1)
+
     except KeyboardInterrupt:
         print("プログラムを終了します")
-        GPIO.cleanup()
         sys.exit()

@@ -1,55 +1,32 @@
-import time
-import RPi.GPIO as GPIO
 import cv2
-from datetime import datetime
 
-# キャプチャする解像度
-IMAGE_WIDTH = 960  # 1920X1080の半分
+# キャプチャの設定
+WINDOW_NAME = "rpiplay"
+IMAGE_WIDTH = 960
 IMAGE_HEIGHT = 540
 
-# キャプチャボード(B102)をリセットする
-def init_capture():
-    # GPIOの初期設定
-    GPIO.setmode(GPIO.BCM)  # GPIOへアクセスする番号をBCMの番号で指定することを宣言します。
-    GPIO.setup(17, GPIO.OUT, initial=GPIO.HIGH)  # リセットピン
-    GPIO.setup(27, GPIO.IN)  # HDMI接続確認用ピン
 
-    # HDMIケーブルが接続されているかの確認
-    if GPIO.input(27) == GPIO.HIGH:
-        # B102のハードウェアリセット
-        GPIO.output(17, GPIO.LOW)
-        time.sleep(0.1)
-        GPIO.output(17, GPIO.HIGH)
-        print("B102をリセットしました")
-    else:
-        print("ERROR:HDMIケーブルが接続されていません")
-        GPIO.cleanup()
-        exit()
+if __name__ == "__main__":
 
-    GPIO.cleanup()
+    # キャプチャの初期設定
+    video_source = cv2.VideoCapture(
+        f"ximagesrc xname={WINDOW_NAME} ! videoconvert ! appsink"
+    )
 
+    while cv2.waitKey(1) != 27:
+        # 画像を所定のサイズでキャプチャ
+        ret, image = video_source.read()
 
-# B102からの入力映像を任意のタイミングでキャプチャする
-def capture_camera():
-    # カメラをキャプチャする
-    cap = cv2.VideoCapture(0)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 960)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)
+        if ret:
+            image = cv2.resize(image, (IMAGE_WIDTH, IMAGE_HEIGHT))
 
-    # retは画像を取得成功フラグ
-    ret, frame = cap.read()
+            # 画像の大きさを取得
+            """
+            height, width, channels = image.shape[:3]
+            print("width: " + str(width))
+            print("height: " + str(height))
+            """
 
-    if ret:
-        date = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = "./" + date + ".png"
-        print("保存しました：" + path)
-        cv2.imwrite(path, frame)  # ファイル保存
+            # キャプチャした画像を表示
+            cv2.imshow("fgo_auto", image)
 
-        time.sleep(1)
-
-
-# 初期化処理
-init_capture()
-
-# カメラをキャプチャする
-capture_camera()
