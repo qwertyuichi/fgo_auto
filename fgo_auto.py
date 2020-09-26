@@ -7,10 +7,15 @@ import itertools
 import sys
 from datetime import datetime
 import serial
+import threading
+
+import matplotlib.pyplot as plt
 
 
 # キャプチャの設定
 WINDOW_NAME = "rpiplay"
+WINDOW_WIDTH = 1920
+WINDOW_HEIGHT = 1080
 IMAGE_WIDTH = 960
 IMAGE_HEIGHT = 540
 
@@ -22,6 +27,22 @@ ARQ_CARD_TAP_POSITION = np.array(
 NOBLE_PHANTASM_TAP_POSITION = np.array(
     [[653, 155], [483, 155], [313, 155]]
 )  # 宝具カードのタップする位置
+
+SKILL_ICON_TAP_POSITION = np.array(
+    [
+        [[529, 435], [595, 435], [661, 435]],
+        [[292, 435], [358, 435], [424, 435]],
+        [[55, 435], [121, 435], [187, 435]],
+    ]
+)  # スキルアイコンのタップする位置
+
+SKILL_AVAILABLE = np.array(
+    [
+        [True, True, True],
+        [True, True, True],
+        [True, True, True],
+    ]
+)  # スキルアイコンのタップする位置
 
 # 画面判別処理を中断するまでの回数
 MAX_ERROR_COUNT = 500
@@ -53,6 +74,7 @@ class TouchController:
 
     def send_message(self, message):
         self.ser.write(bytes(message, "UTF-8"))
+        time.sleep(0.5)
 
     def home(self):
         self.send_message("HOME\n")
@@ -66,6 +88,37 @@ class TouchController:
         self.send_message(message)
 
 
+class ScreenCapture(threading.Thread):
+    def __init__(self):
+        super(ScreenCapture, self).__init__()
+
+        # キャプチャの初期設定
+        self.video_source = cv2.VideoCapture(
+            f"ximagesrc xname={WINDOW_NAME} ! videoconvert ! videoscale ! video/x-raw,width={WINDOW_WIDTH},height={WINDOW_HEIGHT} ! appsink"
+        )
+
+    def stop(self):
+        self.stop = True
+
+    def run(self):
+        self.stop = False
+
+        while not self.stop:
+            ret, image_original = self.video_source.read()
+
+            if ret:
+                # キャプチャした画像をリサイズして更新
+                self.image_color = cv2.resize(
+                    image_original, (IMAGE_WIDTH, IMAGE_HEIGHT)
+                )
+                # キャプチャした画像を表示
+                cv2.imshow("fgo_auto", self.image_color)
+                cv2.waitKey(1)
+
+    def get_image(self):
+        return self.image_color
+
+
 ##### NPゲージ量の取得 #####
 # 戻り値
 #   NPゲージ量を表す配列(ndarray)
@@ -75,7 +128,7 @@ def get_np_gauge(image_color, debug_mode=False):
         {"top_x": 359, "top_y": 508, "bottom_x": 459, "bottom_y": 510},
         {"top_x": 121, "top_y": 508, "bottom_x": 221, "bottom_y": 510},
     ]  # NPゲージの座標
-    THRESHOLD = 20  # 明度の閾値; 閾値以上のpixelはNPゲージのバーが伸びている
+    NP_BRIGHTNESS_THRESHOLD = 3  # 明度の閾値; 閾値以上のpixelはNPゲージのバーが伸びている
     np_gauge = np.array([0, 0, 0])
 
     if debug_mode:
@@ -97,17 +150,17 @@ def get_np_gauge(image_color, debug_mode=False):
         # ゲージの画像幅が100pixelなので、閾値を下回ったindex値をそのままNPゲージ量とする
         for j in range(10, len(lightness)):  # 端部は暗くなるので、開始点近傍は無視
             # print(lightness[j])
-            if lightness[j] <= THRESHOLD:
+            if lightness[j] <= NP_BRIGHTNESS_THRESHOLD:
                 f_np_max = False
                 np_gauge[i] = j
                 break
-            elif j == len(lightness) - 1 and lightness[j] > THRESHOLD:
+            elif j == len(lightness) - 1 and lightness[j] > NP_BRIGHTNESS_THRESHOLD:
                 # 最後まで閾値以下にならなければNPゲージ量MAX
                 np_gauge[i] = 100
 
         if debug_mode:
             # 　NPゲージ部を抜き出した画像を保存
-            cv2.imwrite("/debug/np_gauge_" + str(i + 1) + ".png", img_np)
+            cv2.imwrite("./debug/np_gauge_" + str(i + 1) + ".png", img_np)
 
             # 明度の平均値をプロット
             plt.plot(lightness, label="NP gauge " + str(i + 1))
@@ -443,7 +496,7 @@ def get_game_phase(image_color, debug_mode=False):
 
 
 # フェーズによって行動を決める
-def select_action(phase, error_counter):
+def select_action(phase, error_counter, image_color):
     if phase == Phase.SUPPORTER_SELECT:  # サポート選択画面の場合
         tap_position = get_template_image_position(image_color, "サポート選択")
         if tap_position is not None:
@@ -467,6 +520,7 @@ def select_action(phase, error_counter):
             # Attackボタンを選択する
             tc.move(tap_position)
             tc.tap()
+            tc.home()
             print("        Attackボタンを選択しました")
 
             # 次のフェーズをセット
@@ -486,7 +540,8 @@ def select_action(phase, error_counter):
         if np.count_nonzero(card_type == Card.UNKNOWN) <= 2:
             # NPゲージ量を取得する
             np_gauge = get_np_gauge(image_color)
-            print("        NPゲージ量を取得しました：", np.sort(np_gauge)[::-1])
+            # print("        NPゲージ量を取得しました：", np.sort(np_gauge)[::-1])
+            print("        NPゲージ量を取得しました：", np_gauge[::-1])
             # 下記の優先順で戦略を取る
             # 1. 宝具使用
             # 2. Arts, Quick, Busterチェイン使用
@@ -557,31 +612,35 @@ if __name__ == "__main__":
     # 画面制御のインスタンスを作成
     tc = TouchController()
 
-    # キャプチャの初期設定
-    video_source = cv2.VideoCapture(
-        f"ximagesrc xname={WINDOW_NAME} ! videoconvert ! appsink"
-    )
+    # 画面キャプチャのインスタンスを生成
+    sc = ScreenCapture()
+    sc.start()
+    time.sleep(1)
+
+    # スキル使用
+    """
+    for pos_array in SKILL_ICON_TAP_POSITION:
+        for pos in pos_array:
+            tc.move(pos)
+            tc.tap()
+            time.sleep(5)
+    """
 
     # クエストのフェーズを初期化
     phase = Phase.OTHER
     try:
         error_counter = 0
-        while cv2.waitKey(1) != 27:
+        # while cv2.waitKey(1) != 27:
+        while True:
             # ポインタを初期位置に戻す
             tc.home()
 
             # 画像をキャプチャ
-            ret, image_original = video_source.read()
+            image_color = sc.get_image()
+            cv2.imwrite("./debug/capture.png", image_color)
 
-            if ret:
-                # 画像をリサイズ
-                image_color = cv2.resize(image_original, (IMAGE_WIDTH, IMAGE_HEIGHT))
-
-                # キャプチャした画像を表示
-                cv2.imshow("fgo_auto", image_color)
-
-                # 次のアクションを決める
-                phase, error_counter = select_action(phase, error_counter)
+            # 次のアクションを決める
+            phase, error_counter = select_action(phase, error_counter, image_color)
 
             # 画面判別処理を繰り返してもフェーズが判別不明の場合
             if error_counter >= MAX_ERROR_COUNT:
@@ -593,11 +652,9 @@ if __name__ == "__main__":
                         error_counter = 0
                         break
                     elif s == "e":
-                        GPIO.cleanup()
                         sys.exit()
                         break
-
-            time.sleep(1)
+            time.sleep(0.2)
 
     except KeyboardInterrupt:
         print("プログラムを終了します")
