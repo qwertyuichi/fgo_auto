@@ -36,13 +36,24 @@ SKILL_ICON_TAP_POSITION = np.array(
     ]
 )  # スキルアイコンのタップする位置
 
-SKILL_AVAILABLE = np.array(
+SKILL_LETTER_POSITION = [
     [
-        [True, True, True],
-        [True, True, True],
-        [True, True, True],
-    ]
-)  # スキルアイコンのタップする位置
+        {"top_x": 503, "top_y": 449, "bottom_x": 528, "bottom_y": 462},
+        {"top_x": 569, "top_y": 449, "bottom_x": 594, "bottom_y": 462},
+        {"top_x": 635, "top_y": 449, "bottom_x": 660, "bottom_y": 462},
+    ],
+    [
+        {"top_x": 264, "top_y": 449, "bottom_x": 290, "bottom_y": 462},
+        {"top_x": 330, "top_y": 449, "bottom_x": 356, "bottom_y": 462},
+        {"top_x": 396, "top_y": 449, "bottom_x": 422, "bottom_y": 462},
+    ],
+    [
+        {"top_x": 27, "top_y": 449, "bottom_x": 53, "bottom_y": 462},
+        {"top_x": 93, "top_y": 449, "bottom_x": 119, "bottom_y": 462},
+        {"top_x": 159, "top_y": 449, "bottom_x": 185, "bottom_y": 462},
+    ],
+]  # スキルアイコンの"あと"の文字が表示される位置 → この文字が表示されていればスキル使用不可能として判定する
+
 
 # 画面判別処理を中断するまでの回数
 MAX_ERROR_COUNT = 500
@@ -63,6 +74,7 @@ class Phase(IntEnum):
     CARD_SELECT = 2  # カード選択画面
     RESULT = 3  # リザルト画面
     END_PROCESS = 4  # 連続出撃の選択画面
+    USE_APPLE = 5  # 連続出撃の選択画面
 
 
 class TouchController:
@@ -74,7 +86,7 @@ class TouchController:
 
     def send_message(self, message):
         self.ser.write(bytes(message, "UTF-8"))
-        time.sleep(0.5)
+        time.sleep(0.2)
 
     def home(self):
         self.send_message("HOME\n")
@@ -184,7 +196,6 @@ def get_template_image_position(image_color, image_name, roi=None, debug_mode=Fa
     image_gray = cv2.cvtColor(image_color, cv2.COLOR_BGR2GRAY)
 
     # ROIの設定
-
     if roi is not None:
         image_gray = image_gray[
             roi["top_y"] : roi["bottom_y"], roi["top_x"] : roi["bottom_x"]
@@ -392,18 +403,20 @@ def select_card(np_gauge, card_type):
     # 3. Braveチェイン使用
     # 4. ランダム選択
 
-    ### 1. 宝具を使用を検討 ###
+    ### 1. 宝具を使用可否を検証 ###
     # NPゲージが100%以上のものがあれば宝具を使用する
     noble_phantasm_list = np.where(np_gauge >= 100)[0]
     if len(noble_phantasm_list) > 0:
         ### 1. 宝具使用 ###
         print("        宝具を使用します")
         # 宝具カードを選択する
+        time.sleep(1)  # 宝具カードが選択可能になるまでのウェイト
         for i in noble_phantasm_list:
             print("            宝具カード" + str(i) + "を選択")
             tc.move(NOBLE_PHANTASM_TAP_POSITION[i])
             tc.tap()
 
+        """
         # 残りはランダムに通常カードを選択する
         if len(noble_phantasm_list) < 3:
             normal_card_list = random.sample(
@@ -413,6 +426,12 @@ def select_card(np_gauge, card_type):
                 print("            通常カード" + str(i) + "を選択")
                 tc.move(ARQ_CARD_TAP_POSITION[i])
                 tc.tap()
+        """
+        # 通常カードは全部タップする（宝具封印対策）
+        for i in range(5):
+            print("            通常カード" + str(i) + "を選択")
+            tc.move(ARQ_CARD_TAP_POSITION[i])
+            tc.tap()
     else:
         ### 2. Arts, Quick, Busterチェイン使用を検討 ###
         chain_type, combination = get_aqb_chain_combination(card_type)
@@ -444,6 +463,38 @@ def select_card(np_gauge, card_type):
                     tc.tap()
 
 
+# 利用可能なスキルをすべて使用する
+def use_available_skills(image_color, debug_mode=False):
+    for i in range(3):
+        for j in range(3):
+            pos = get_template_image_position(
+                image_color, "あと", SKILL_LETTER_POSITION[i][j], debug_mode
+            )
+            if pos is None:
+
+                # "あと"の文字が見つからなければ、スキル使用可能
+                print("サーヴァント", i + 1, "の第", j + 1, "スキルを使用します")
+                # cv2.imwrite("./debug/capture.png", image_color)
+                tc.move(SKILL_ICON_TAP_POSITION[i][j])
+                tc.tap()
+                time.sleep(0.2)
+                tc.move(np.array([480, 300]))  # 真ん中のサーヴァントを選択
+                tc.tap()
+                time.sleep(0.2)
+                tc.move(np.array([360, 300]))  # 2人しかいないとき→左側のサーヴァントを選択
+                tc.tap()
+                time.sleep(0.2)
+                tc.move(np.array([600, 300]))  # 2人しかいないとき→右側のサーヴァントを選択
+                tc.tap()
+                tc.home()
+                time.sleep(2)
+
+                return False
+
+    # これ以上使えるスキルはない判定
+    return True
+
+
 def get_game_phase(image_color, debug_mode=False):
     # 現在のフェーズがわからなければ、下記の優先順位で確認する
     # 1. カード選択画面
@@ -460,6 +511,7 @@ def get_game_phase(image_color, debug_mode=False):
         # 判別不能カードが2枚以下であればカードが識別できたものとする
         phase = Phase.CARD_SELECT
         print("    カード選択画面に移行します")
+
     else:
         # 2. スキル選択画面か否か
         roi = {"top_x": 789, "top_y": 391, "bottom_x": 909, "bottom_y": 439}
@@ -489,8 +541,22 @@ def get_game_phase(image_color, debug_mode=False):
                         phase = Phase.SUPPORTER_SELECT
                         print("    サポート選択画面に移行します")
                     else:
-                        # いずれでもない場合
-                        phase = Phase.OTHER
+                        # 5. 黄金の果実を使用する場面か
+                        roi = {
+                            "top_x": 236,
+                            "top_y": 200,
+                            "bottom_x": 324,
+                            "bottom_y": 292,
+                        }
+                        position = get_template_image_position(
+                            image_color, "golden_apple", roi
+                        )
+                        if position is not None:
+                            phase = Phase.USE_APPLE
+                            print("    黄金の果実を使用します")
+                        else:
+                            # いずれでもない場合
+                            phase = Phase.OTHER
 
     return phase
 
@@ -515,18 +581,25 @@ def select_action(phase, error_counter, image_color):
             print("       サポート選択を認識できませんでした")
             phase = Phase.OTHER
     elif phase == Phase.SKILL_SELECT:  # スキル選択画面の場合
+
+        # "Attack"ボタンがあればスキル選択画面として判定する
         tap_position = get_template_image_position(image_color, "attack")
         if tap_position is not None:
-            # Attackボタンを選択する
-            tc.move(tap_position)
-            tc.tap()
-            tc.home()
-            print("        Attackボタンを選択しました")
+            # 利用可能なスキルがあれば全て使用する
+            no_skill_available = use_available_skills(image_color, debug_mode=False)
 
-            # 次のフェーズをセット
-            print("    カード選択画面へ移行します")
-            phase = Phase.CARD_SELECT
-            error_counter = 0
+            # 使えるスキルがなければAttackボタンを選択する
+            if no_skill_available:
+
+                tc.move(tap_position)
+                tc.tap()
+                tc.home()
+                print("        Attackボタンを選択しました")
+
+                # 次のフェーズをセット
+                print("    カード選択画面へ移行します")
+                phase = Phase.CARD_SELECT
+                error_counter = 0
         else:
             print("        Attackボタンを認識できませんでした")
             phase = Phase.OTHER
@@ -535,6 +608,7 @@ def select_action(phase, error_counter, image_color):
             path = "./debug/" + date + ".png"
             print("保存しました：" + path)
             cv2.imwrite(path, image_color)  # ファイル保存
+
     elif phase == Phase.CARD_SELECT:  # カード選択画面の場合
         card_type = get_card_type(image_color)
         if np.count_nonzero(card_type == Card.UNKNOWN) <= 2:
@@ -559,12 +633,12 @@ def select_action(phase, error_counter, image_color):
     elif phase == Phase.RESULT:
         tap_position = get_template_image_position(image_color, "result")
         if tap_position is not None:
-            # "次へ"ボタンが現れる座標を3回タップする
+            # "次へ"ボタンが現れる座標を5回タップする
             tap_position = np.array([850, 510])
             tc.move(tap_position)
             for i in range(5):
                 tc.tap()
-                time.sleep(2)
+                time.sleep(1)
 
             # 次のフェーズをセット
             phase = Phase.END_PROCESS
@@ -578,32 +652,60 @@ def select_action(phase, error_counter, image_color):
             # 連続出撃ボタンを選択する
             tc.move(tap_position)
             tc.tap()
-            time.sleep(3)
+            time.sleep(1)
             print("        連続出撃ボタンを選択しました")
 
             # 次のフェーズをセット
-            time.sleep(5)
-            print("    サポート選択画面へ移行します")
-            phase = Phase.SUPPORTER_SELECT
+            # 黄金の果実を選択するか、サポート選択画面へ移行するかがわからないので、OTHERをセット
+            phase = Phase.OTHER
             error_counter = 0
         else:
             print("        連続出撃ボタンを認識できませんでした")
             phase = Phase.OTHER
-    elif phase == Phase.OTHER:
-        # フェーズが判別不明になったら画面判別処理へ移行する
-        if error_counter == 0:
-            print("画面判別処理中... ( 1 /", MAX_ERROR_COUNT, ")")
-        else:
-            print(
-                "\033[1A\033[2K\033[G画面判別処理中... (",
-                error_counter + 1,
-                "/",
-                MAX_ERROR_COUNT,
-                ")",
-            )
 
-        phase = get_game_phase(image_color, True)
-        error_counter += 1
+    elif phase == Phase.USE_APPLE:
+        tap_position = get_template_image_position(image_color, "golden_apple")
+        if tap_position is not None:
+            # 連続出撃ボタンを選択する
+            tc.move(tap_position)
+            tc.tap()
+            time.sleep(1)
+            # "決定"ボタンが現れる座標をタップする
+            tap_position = np.array([630, 425])
+            tc.move(tap_position)
+            tc.tap()
+            print("        黄金の果実を使用しました")
+
+            # 次のフェーズをセット
+            time.sleep(2)
+            print("    サポート選択画面へ移行します")
+            phase = Phase.SUPPORTER_SELECT
+            error_counter = 0
+        else:
+            phase = Phase.OTHER
+    elif phase == Phase.OTHER:
+        # 何かウィンドウが開いていてスタックしている？
+        # → 閉じるボタンを探してタップする
+        tap_position = get_template_image_position(image_color, "close")
+        if tap_position is not None:
+            tc.move(tap_position)
+            tc.tap()
+        else:
+            # フェーズが判別不明になった
+            # → 画面判別処理へ移行する
+            if error_counter == 0:
+                print("画面判別処理中... ( 1 /", MAX_ERROR_COUNT, ")")
+            else:
+                print(
+                    "\033[1A\033[2K\033[G画面判別処理中... (",
+                    error_counter + 1,
+                    "/",
+                    MAX_ERROR_COUNT,
+                    ")",
+                )
+
+            phase = get_game_phase(image_color, True)
+            error_counter += 1
 
     return phase, error_counter
 
@@ -617,15 +719,6 @@ if __name__ == "__main__":
     sc.start()
     time.sleep(1)
 
-    # スキル使用
-    """
-    for pos_array in SKILL_ICON_TAP_POSITION:
-        for pos in pos_array:
-            tc.move(pos)
-            tc.tap()
-            time.sleep(5)
-    """
-
     # クエストのフェーズを初期化
     phase = Phase.OTHER
     try:
@@ -637,7 +730,7 @@ if __name__ == "__main__":
 
             # 画像をキャプチャ
             image_color = sc.get_image()
-            cv2.imwrite("./debug/capture.png", image_color)
+            # cv2.imwrite("./debug/capture.png", image_color)
 
             # 次のアクションを決める
             phase, error_counter = select_action(phase, error_counter, image_color)
