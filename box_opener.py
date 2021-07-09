@@ -8,6 +8,7 @@ import sys
 
 # キャプチャの設定
 WINDOW_NAME = "rpiplay"
+WINDOW_ID = "0x1e00001"
 WINDOW_WIDTH = 1920
 WINDOW_HEIGHT = 1080
 IMAGE_WIDTH = 960
@@ -46,7 +47,8 @@ class ScreenCapture(threading.Thread):
 
         # キャプチャの初期設定
         self.video_source = cv2.VideoCapture(
-            f"ximagesrc xname={WINDOW_NAME} ! videoconvert ! videoscale ! video/x-raw,width={WINDOW_WIDTH},height={WINDOW_HEIGHT} ! appsink"
+            # f"ximagesrc xname={WINDOW_NAME} ! videoconvert ! videoscale ! video/x-raw,width={WINDOW_WIDTH},height={WINDOW_HEIGHT} ! appsink"
+            f"ximagesrc xid={WINDOW_ID} ! videoconvert ! videoscale ! video/x-raw,width={WINDOW_WIDTH},height={WINDOW_HEIGHT} ! appsink"
         )
 
     def stop(self):
@@ -161,7 +163,7 @@ if __name__ == "__main__":
                 if tap_position is not None:
                     tc.move(tap_position)
                     tc.tap()
-                    time.sleep(1)
+                    time.sleep(2)
                     print("箱をリセットします")
 
                     image_color = sc.get_image()
@@ -170,7 +172,7 @@ if __name__ == "__main__":
                     tc.move(tap_position)
                     tc.tap()
                     image_color = sc.get_image()
-                    time.sleep(1)
+                    time.sleep(2)
 
                     image_color = sc.get_image()
                     tap_position = get_template_image_position(image_color, "閉じる")

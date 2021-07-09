@@ -2,17 +2,19 @@ import cv2
 
 # キャプチャの設定
 WINDOW_NAME = "rpiplay"
-WINDOW_WIDTH = 1920
-WINDOW_HEIGHT = 1080
-IMAGE_WIDTH = 960
-IMAGE_HEIGHT = 540
+WINDOW_ID = "0x1e00002"
+WINDOW_WIDTH = 2532  # 1920
+WINDOW_HEIGHT = 1170  # 1080
+IMAGE_WIDTH = 1823  # 960
+IMAGE_HEIGHT = 842  # 540
 
 
 if __name__ == "__main__":
 
     # キャプチャの初期設定
     video_source = cv2.VideoCapture(
-        f"ximagesrc xname={WINDOW_NAME} ! videoconvert ! videoscale ! video/x-raw,width={WINDOW_WIDTH},height={WINDOW_HEIGHT} ! appsink"
+        # f"ximagesrc xname={WINDOW_NAME} ! videoconvert ! videoscale ! video/x-raw,width={WINDOW_WIDTH},height={WINDOW_HEIGHT} ! appsink"
+        f"ximagesrc xid={WINDOW_ID} ! videoconvert ! videoscale ! video/x-raw,width={WINDOW_WIDTH},height={WINDOW_HEIGHT} ! appsink"
     )
 
     # while cv2.waitKey(1) != 27:
@@ -33,3 +35,5 @@ if __name__ == "__main__":
         # cv2.imshow("fgo_auto", image)
         cv2.imwrite("./debug/capture.png", image)
         cv2.waitKey(1)
+    else:
+        print("キャプチャできませんでした")

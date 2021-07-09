@@ -11,52 +11,69 @@ import threading
 
 import matplotlib.pyplot as plt
 
-
 # キャプチャの設定
 WINDOW_NAME = "rpiplay"
-WINDOW_WIDTH = 1920
-WINDOW_HEIGHT = 1080
-IMAGE_WIDTH = 960
-IMAGE_HEIGHT = 540
+WINDOW_ID = "0x1e00002"
+WINDOW_WIDTH = 2532  # 1920
+WINDOW_HEIGHT = 1170  # 1080
+IMAGE_WIDTH = 1823  # 960
+IMAGE_HEIGHT = 842  # 540
 
 # カードをタップする位置
 ARQ_CARD_TAP_POSITION = np.array(
-    [[875, 380], [680, 380], [485, 380], [290, 380], [95, 380]]
+    [[1525, 552], [1211, 552], [911, 552], [615, 552], [310, 552]]
 )  # Ars, Quick, Busterカードのタップする位置
 
 NOBLE_PHANTASM_TAP_POSITION = np.array(
-    [[653, 155], [483, 155], [313, 155]]
+    [[1186, 215], [911, 215], [647, 215]]
 )  # 宝具カードのタップする位置
 
 SKILL_ICON_TAP_POSITION = np.array(
     [
-        [[529, 435], [595, 435], [661, 435]],
-        [[292, 435], [358, 435], [424, 435]],
-        [[55, 435], [121, 435], [187, 435]],
+        [[885, 652], [988, 652], [1094, 652]],
+        [[512, 652], [617, 652], [721, 652]],
+        [[142, 652], [248, 652], [354, 652]],
     ]
 )  # スキルアイコンのタップする位置
 
 SKILL_LETTER_POSITION = [
     [
-        {"top_x": 503, "top_y": 449, "bottom_x": 528, "bottom_y": 462},
-        {"top_x": 569, "top_y": 449, "bottom_x": 594, "bottom_y": 462},
-        {"top_x": 635, "top_y": 449, "bottom_x": 660, "bottom_y": 462},
+        {"top_x": 847, "top_y": 677, "bottom_x": 882, "bottom_y": 694},
+        {"top_x": 950, "top_y": 677, "bottom_x": 985, "bottom_y": 694},
+        {"top_x": 1053, "top_y": 677, "bottom_x": 1088, "bottom_y": 694},
     ],
     [
-        {"top_x": 264, "top_y": 449, "bottom_x": 290, "bottom_y": 462},
-        {"top_x": 330, "top_y": 449, "bottom_x": 356, "bottom_y": 462},
-        {"top_x": 396, "top_y": 449, "bottom_x": 422, "bottom_y": 462},
+        {"top_x": 476, "top_y": 677, "bottom_x": 510, "bottom_y": 694},
+        {"top_x": 579, "top_y": 677, "bottom_x": 613, "bottom_y": 694},
+        {"top_x": 682, "top_y": 677, "bottom_x": 716, "bottom_y": 694},
     ],
     [
-        {"top_x": 27, "top_y": 449, "bottom_x": 53, "bottom_y": 462},
-        {"top_x": 93, "top_y": 449, "bottom_x": 119, "bottom_y": 462},
-        {"top_x": 159, "top_y": 449, "bottom_x": 185, "bottom_y": 462},
+        {"top_x": 104, "top_y": 677, "bottom_x": 139, "bottom_y": 694},
+        {"top_x": 207, "top_y": 677, "bottom_x": 242, "bottom_y": 694},
+        {"top_x": 310, "top_y": 677, "bottom_x": 345, "bottom_y": 694},
     ],
 ]  # スキルアイコンの"あと"の文字が表示される位置 → この文字が表示されていればスキル使用不可能として判定する
 
+SKILL_ICON_TOP_FRAME = [
+    [
+        {"top_x": 854, "top_y": 614, "bottom_x": 922, "bottom_y": 616},
+        {"top_x": 957, "top_y": 614, "bottom_x": 1025, "bottom_y": 616},
+        {"top_x": 1060, "top_y": 614, "bottom_x": 1128, "bottom_y": 616},
+    ],
+    [
+        {"top_x": 482, "top_y": 614, "bottom_x": 551, "bottom_y": 616},
+        {"top_x": 585, "top_y": 614, "bottom_x": 654, "bottom_y": 616},
+        {"top_x": 688, "top_y": 614, "bottom_x": 757, "bottom_y": 616},
+    ],
+    [
+        {"top_x": 111, "top_y": 614, "bottom_x": 179, "bottom_y": 616},
+        {"top_x": 214, "top_y": 614, "bottom_x": 282, "bottom_y": 616},
+        {"top_x": 317, "top_y": 614, "bottom_x": 385, "bottom_y": 616},
+    ],
+]  # スキルアイコン上部の白いライン → このラインが見えていればスキルアイコンが存在していると判定する
 
 # 画面判別処理を中断するまでの回数
-MAX_ERROR_COUNT = 500
+MAX_ERROR_COUNT = 5000
 
 # カード種別
 class Card(IntEnum):
@@ -98,6 +115,7 @@ class TouchController:
         x, y = destination_image_coordinate
         message = "MOVE," + str(x) + "," + str(y) + "\n"
         self.send_message(message)
+        time.sleep(0.1)
 
 
 class ScreenCapture(threading.Thread):
@@ -106,7 +124,8 @@ class ScreenCapture(threading.Thread):
 
         # キャプチャの初期設定
         self.video_source = cv2.VideoCapture(
-            f"ximagesrc xname={WINDOW_NAME} ! videoconvert ! videoscale ! video/x-raw,width={WINDOW_WIDTH},height={WINDOW_HEIGHT} ! appsink"
+            # f"ximagesrc xname={WINDOW_NAME} ! videoconvert ! videoscale ! video/x-raw,width={WINDOW_WIDTH},height={WINDOW_HEIGHT} ! appsink"
+            f"ximagesrc xid={WINDOW_ID} ! videoconvert ! videoscale ! video/x-raw,width={WINDOW_WIDTH},height={WINDOW_HEIGHT} ! appsink"
         )
 
     def stop(self):
@@ -119,10 +138,16 @@ class ScreenCapture(threading.Thread):
             ret, image_original = self.video_source.read()
 
             if ret:
+                # w = 100
+                # self.image_color = image_original[:, w : 2532 - w]
                 # キャプチャした画像をリサイズして更新
                 self.image_color = cv2.resize(
                     image_original, (IMAGE_WIDTH, IMAGE_HEIGHT)
                 )
+                # self.image_color = cv2.resize(
+                #    self.image_color, (IMAGE_WIDTH, IMAGE_HEIGHT)
+                # )
+
                 # キャプチャした画像を表示
                 cv2.imshow("fgo_auto", self.image_color)
                 cv2.waitKey(1)
@@ -136,11 +161,11 @@ class ScreenCapture(threading.Thread):
 #   NPゲージ量を表す配列(ndarray)
 def get_np_gauge(image_color, debug_mode=False):
     NP_POSITION = [
-        {"top_x": 598, "top_y": 508, "bottom_x": 698, "bottom_y": 510},
-        {"top_x": 359, "top_y": 508, "bottom_x": 459, "bottom_y": 510},
-        {"top_x": 121, "top_y": 508, "bottom_x": 221, "bottom_y": 510},
+        {"top_x": 988, "top_y": 769, "bottom_x": 1144, "bottom_y": 775},
+        {"top_x": 617, "top_y": 769, "bottom_x": 773, "bottom_y": 775},
+        {"top_x": 246, "top_y": 769, "bottom_x": 402, "bottom_y": 775},
     ]  # NPゲージの座標
-    NP_BRIGHTNESS_THRESHOLD = 3  # 明度の閾値; 閾値以上のpixelはNPゲージのバーが伸びている
+    NP_BRIGHTNESS_THRESHOLD = 6  # 明度の閾値; 閾値以上のpixelはNPゲージのバーが伸びている
     np_gauge = np.array([0, 0, 0])
 
     if debug_mode:
@@ -159,12 +184,13 @@ def get_np_gauge(image_color, debug_mode=False):
         # 明度の平均値を求める
         lightness = np.mean(img_np, axis=0)
 
-        # ゲージの画像幅が100pixelなので、閾値を下回ったindex値をそのままNPゲージ量とする
+        # ゲージの画像幅が158pixelなので、閾値を下回ったindex値を元にNPゲージ量を算出する
+        gauge_length = NP_POSITION[i]["bottom_x"] - NP_POSITION[i]["top_x"]
         for j in range(10, len(lightness)):  # 端部は暗くなるので、開始点近傍は無視
             # print(lightness[j])
             if lightness[j] <= NP_BRIGHTNESS_THRESHOLD:
                 f_np_max = False
-                np_gauge[i] = j
+                np_gauge[i] = int(100 * j / 158)
                 break
             elif j == len(lightness) - 1 and lightness[j] > NP_BRIGHTNESS_THRESHOLD:
                 # 最後まで閾値以下にならなければNPゲージ量MAX
@@ -314,16 +340,16 @@ def get_brave_chain_combination(image_color, debug_mode=False):
 
 ##### カード種別を取得する ####
 def get_card_type(image_color, debug_mode=False):
-    THRESHOLD = 0.90  # 一致度の閾値; 一致度の最大値がこの閾値以上であれば、テンプレートと一致しているとみなす
+    THRESHOLD = 0.80  # 一致度の閾値; 一致度の最大値がこの閾値以上であれば、テンプレートと一致しているとみなす
     ARTS_IMAGE_PATH = "./pict/arts.png"
     QUICK_IMAGE_PATH = "./pict/quick.png"
     BUSTER_IMAGE_PATH = "./pict/buster.png"
     CARD_POSITION = [
-        {"top_x": 802, "top_y": 380, "bottom_x": 933, "bottom_y": 465},
-        {"top_x": 607, "top_y": 380, "bottom_x": 738, "bottom_y": 465},
-        {"top_x": 414, "top_y": 380, "bottom_x": 545, "bottom_y": 465},
-        {"top_x": 224, "top_y": 380, "bottom_x": 355, "bottom_y": 465},
-        {"top_x": 33, "top_y": 380, "bottom_x": 165, "bottom_y": 465},
+        {"top_x": 1420, "top_y": 450, "bottom_x": 1600, "bottom_y": 700},
+        {"top_x": 1120, "top_y": 450, "bottom_x": 1300, "bottom_y": 700},
+        {"top_x": 820, "top_y": 450, "bottom_x": 1000, "bottom_y": 700},
+        {"top_x": 520, "top_y": 450, "bottom_x": 700, "bottom_y": 700},
+        {"top_x": 220, "top_y": 450, "bottom_x": 400, "bottom_y": 700},
     ]  # 各カードの認識範囲
     card_type = np.full(5, Card.UNKNOWN)
 
@@ -463,7 +489,29 @@ def select_card(np_gauge, card_type):
                     tc.tap()
 
 
-# 利用可能なスキルをすべて使用する
+# スキルアイコンが存在するかを判定する
+def check_skill_icon_existence(image_color, roi=None):
+    THRESHOLD = 200  # 平均輝度の閾値; 平均輝度がこの閾値以上であれば、スキルアイコンが存在しているとみなす
+
+    # キャプチャ画像のグレースケール化
+    image_gray = cv2.cvtColor(image_color, cv2.COLOR_BGR2GRAY)
+
+    # ROIの設定
+    if roi is not None:
+        image_gray = image_gray[
+            roi["top_y"] : roi["bottom_y"], roi["top_x"] : roi["bottom_x"]
+        ]
+
+        mean_brightness = np.max(np.mean(image_gray, axis=1))
+        if mean_brightness > THRESHOLD:
+            return True
+        else:
+            return False
+    else:
+        return False
+
+
+# 利用可能なスキルを見つけて発動する
 def use_available_skills(image_color, debug_mode=False):
     for i in range(3):
         for j in range(3):
@@ -472,24 +520,31 @@ def use_available_skills(image_color, debug_mode=False):
             )
             if pos is None:
 
-                # "あと"の文字が見つからなければ、スキル使用可能
-                print("サーヴァント", i + 1, "の第", j + 1, "スキルを使用します")
-                # cv2.imwrite("./debug/capture.png", image_color)
-                tc.move(SKILL_ICON_TAP_POSITION[i][j])
-                tc.tap()
-                time.sleep(0.2)
-                tc.move(np.array([480, 300]))  # 真ん中のサーヴァントを選択
-                tc.tap()
-                time.sleep(0.2)
-                tc.move(np.array([360, 300]))  # 2人しかいないとき→左側のサーヴァントを選択
-                tc.tap()
-                time.sleep(0.2)
-                tc.move(np.array([600, 300]))  # 2人しかいないとき→右側のサーヴァントを選択
-                tc.tap()
-                tc.home()
-                time.sleep(2)
+                skill_icon_existence = check_skill_icon_existence(
+                    image_color, SKILL_ICON_TOP_FRAME[i][j]
+                )
 
-                return False
+                # スキルアイコンの存在が確認できた上、"あと"の文字が見つからなければ、スキル使用可能
+                if skill_icon_existence:
+                    print("サーヴァント", i + 1, "の第", j + 1, "スキルを使用します")
+                    # cv2.imwrite("./debug/capture.png", image_color)
+                    tc.move(SKILL_ICON_TAP_POSITION[i][j])
+                    tc.tap()
+                    # time.sleep(0.2)
+                    tc.move(np.array([920, 500]))  # 真ん中のサーヴァントを選択
+                    tc.tap()
+                    # time.sleep(0.2)
+                    tc.move(np.array([550, 500]))  # 2人しかいないとき→左側のサーヴァントを選択
+                    tc.tap()
+                    # time.sleep(0.2)
+                    tc.move(np.array([1280, 500]))  # 2人しかいないとき→右側のサーヴァントを選択
+                    tc.tap()
+                    tc.home()
+                    time.sleep(2)
+
+                    return False
+                else:
+                    print("サーヴァント", i + 1, "の第", j + 1, "スキルのアイコンが見つかりません")
 
     # これ以上使えるスキルはない判定
     return True
@@ -514,44 +569,48 @@ def get_game_phase(image_color, debug_mode=False):
 
     else:
         # 2. スキル選択画面か否か
-        roi = {"top_x": 789, "top_y": 391, "bottom_x": 909, "bottom_y": 439}
-        position = get_template_image_position(image_color, "attack", roi)
+        # roi = {"top_x": 789, "top_y": 391, "bottom_x": 909, "bottom_y": 439}
+        # position = get_template_image_position(image_color, "attack", roi)
+        position = get_template_image_position(image_color, "attack")
         if position is not None:
             phase = Phase.SKILL_SELECT
             print("    スキル選択画面に移行します")
         else:
             # 3. リザルト画面か否か
-            roi = {"top_x": 0, "top_y": 0, "bottom_x": 960, "bottom_y": 270}
-            position = get_template_image_position(image_color, "result", roi)
+            # roi = {"top_x": 0, "top_y": 0, "bottom_x": 960, "bottom_y": 270}
+            # position = get_template_image_position(image_color, "result", roi)
+            position = get_template_image_position(image_color, "result")
             if position is not None:
                 phase = Phase.RESULT
                 print("    リザルト画面に移行します")
             else:
                 # 4. 連続出撃確認画面か否か
-                roi = {"top_x": 562, "top_y": 392, "bottom_x": 700, "bottom_y": 452}
-                position = get_template_image_position(image_color, "連続出撃", roi)
+                # roi = {"top_x": 562, "top_y": 392, "bottom_x": 700, "bottom_y": 452}
+                # position = get_template_image_position(image_color, "連続出撃", roi)
+                position = get_template_image_position(image_color, "連続出撃")
                 if position is not None:
                     phase = Phase.END_PROCESS
                     print("    連続出撃選択画面に移行します")
                 else:
                     # 5. サポート選択画面か否か
-                    roi = {"top_x": 696, "top_y": 0, "bottom_x": 960, "bottom_y": 55}
-                    position = get_template_image_position(image_color, "サポート選択", roi)
+                    # roi = {"top_x": 696, "top_y": 0, "bottom_x": 960, "bottom_y": 55}
+                    # position = get_template_image_position(image_color, "サポート選択", roi)
+                    position = get_template_image_position(image_color, "サポート選択")
                     if position is not None:
                         phase = Phase.SUPPORTER_SELECT
                         print("    サポート選択画面に移行します")
                     else:
                         # 5. 黄金の果実を使用する場面か
-                        roi = {
-                            "top_x": 236,
-                            "top_y": 200,
-                            "bottom_x": 324,
-                            "bottom_y": 292,
-                        }
-                        position = get_template_image_position(
-                            image_color, "golden_apple", roi
+                        golden_apple_position = get_template_image_position(
+                            image_color, "golden_apple"
                         )
-                        if position is not None:
+                        silver_apple_position = get_template_image_position(
+                            image_color, "silver_apple"
+                        )
+                        if (
+                            golden_apple_position is not None
+                            or silver_apple_position is not None
+                        ):
                             phase = Phase.USE_APPLE
                             print("    黄金の果実を使用します")
                         else:
@@ -567,7 +626,7 @@ def select_action(phase, error_counter, image_color):
         tap_position = get_template_image_position(image_color, "サポート選択")
         if tap_position is not None:
             # サポートの一番上のキャラクタを選択する
-            tap_position = np.array([100, 200])
+            tap_position = np.array([326, 326])
             tc.move(tap_position)
             tc.tap()
             print("        サポートを選択しました")
@@ -587,6 +646,7 @@ def select_action(phase, error_counter, image_color):
         if tap_position is not None:
             # 利用可能なスキルがあれば全て使用する
             no_skill_available = use_available_skills(image_color, debug_mode=False)
+            # no_skill_available = True
 
             # 使えるスキルがなければAttackボタンを選択する
             if no_skill_available:
@@ -600,6 +660,7 @@ def select_action(phase, error_counter, image_color):
                 print("    カード選択画面へ移行します")
                 phase = Phase.CARD_SELECT
                 error_counter = 0
+                time.sleep(0.5)
         else:
             print("        Attackボタンを認識できませんでした")
             phase = Phase.OTHER
@@ -634,7 +695,7 @@ def select_action(phase, error_counter, image_color):
         tap_position = get_template_image_position(image_color, "result")
         if tap_position is not None:
             # "次へ"ボタンが現れる座標を5回タップする
-            tap_position = np.array([850, 510])
+            tap_position = np.array([1452, 748])
             tc.move(tap_position)
             for i in range(5):
                 tc.tap()
@@ -664,24 +725,59 @@ def select_action(phase, error_counter, image_color):
             phase = Phase.OTHER
 
     elif phase == Phase.USE_APPLE:
-        tap_position = get_template_image_position(image_color, "golden_apple")
-        if tap_position is not None:
-            # 連続出撃ボタンを選択する
+        # 果実の選択画面であることを確認する
+        golden_apple_position = get_template_image_position(image_color, "golden_apple")
+        silver_apple_position = get_template_image_position(image_color, "silver_apple")
+
+        if golden_apple_position is not None or silver_apple_position is not None:
+            # (760,400)をタップする
+            tap_position = np.array([1346, 615])
             tc.move(tap_position)
             tc.tap()
-            time.sleep(1)
+
+            # 画面を更新する
+            image_color = sc.get_image()
+
+            # 黄金の果実/白銀の果実/赤銅の果実を使用する
+            golden_apple_position = get_template_image_position(
+                image_color, "golden_apple"
+            )
+            silver_apple_position = get_template_image_position(
+                image_color, "silver_apple"
+            )
+            # bronze_apple_position = get_template_image_position(
+            #    image_color, "bronze_apple"
+            # )
+
+            if golden_apple_position is not None:
+                # 黄金の果実を選択する
+                tc.move(golden_apple_position)
+                tc.tap()
+                time.sleep(0.1)
+            if silver_apple_position is not None:
+                # 白銀の果実を選択する
+                tc.move(silver_apple_position)
+                tc.tap()
+                time.sleep(0.1)
+            # if bronze_apple_position is not None:
+            #    # 赤銅の果実を選択する
+            #    tc.move(bronze_apple_position)
+            #    tc.tap()
+            #    time.sleep(0.1)
+
             # "決定"ボタンが現れる座標をタップする
-            tap_position = np.array([630, 425])
+            tap_position = np.array([1146, 660])
             tc.move(tap_position)
             tc.tap()
-            print("        黄金の果実を使用しました")
+            print("        APを回復しました")
 
             # 次のフェーズをセット
-            time.sleep(2)
+            time.sleep(4)
             print("    サポート選択画面へ移行します")
             phase = Phase.SUPPORTER_SELECT
             error_counter = 0
         else:
+            tap_position = None
             phase = Phase.OTHER
     elif phase == Phase.OTHER:
         # 何かウィンドウが開いていてスタックしている？

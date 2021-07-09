@@ -1,0 +1,15 @@
+Servant 1:
+	Skill1:55,435  
+	Skill2:121,435 66,0
+	Skill3:187,435 66,0
+
+Servant 2:
+	Skill1:292,435 105,0
+	Skill2:358,435 66,0
+	Skill3:424,435 66,0
+
+Servant 3:
+	Skill1:529,435 105,0
+	Skill2:595,435 66,0
+	Skill3:661,435 66,0
+
