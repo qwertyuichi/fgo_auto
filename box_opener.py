@@ -6,16 +6,17 @@ import serial
 import threading
 import sys
 
+
 # キャプチャの設定
 WINDOW_NAME = "rpiplay"
-WINDOW_ID = "0x1e00001"
-WINDOW_WIDTH = 1920
-WINDOW_HEIGHT = 1080
-IMAGE_WIDTH = 960
-IMAGE_HEIGHT = 540
+WINDOW_ID = "0x2a00002"
+WINDOW_WIDTH = 1728#2532
+WINDOW_HEIGHT = 798#1170
+IMAGE_WIDTH = 1823  # 960
+IMAGE_HEIGHT = 842  # 540
 
 # 画面判別処理を中断するまでの回数
-MAX_ERROR_COUNT = 500
+MAX_ERROR_COUNT = 5000
 
 
 class TouchController:
@@ -66,8 +67,8 @@ class ScreenCapture(threading.Thread):
                     image_original, (IMAGE_WIDTH, IMAGE_HEIGHT)
                 )
                 # キャプチャした画像を表示
-                cv2.imshow("fgo_auto", self.image_color)
-                cv2.waitKey(1)
+                #cv2.imshow("fgo_auto", self.image_color)
+                #cv2.waitKey(1)
 
     def get_image(self):
         return self.image_color
